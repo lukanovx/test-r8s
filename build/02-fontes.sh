@@ -119,6 +119,16 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
             https://gitlab.com/simonpunk/susfs4ksu.git "$SUSFS_REPO"
     fi
 
+    # Copy SUSFS fs and include files provided by SUSFS
+    if [ -d "$SUSFS_REPO/kernel_patches/fs" ]; then
+        echo ">> Copying SUSFS fs files..."
+        cp -rv "$SUSFS_REPO/kernel_patches/fs/"* "$SRC/fs/"
+    fi
+    if [ -d "$SUSFS_REPO/kernel_patches/include/linux" ]; then
+        echo ">> Copying SUSFS include files..."
+        cp -rv "$SUSFS_REPO/kernel_patches/include/linux/"* "$SRC/include/linux/"
+    fi
+
     # Apply the two required patch files to the kernel source
     # 1. The KSU-side patch (adds SUSFS support to the KernelSU driver)
     # 2. The kernel-side patch (adds susfs syscall hooks to fs/ and include/)
@@ -131,15 +141,11 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
     # Apply KSU-side patch inside the KernelSU driver directory
     KSU_DRIVER="$SRC/KernelSU"
     echo ">> Applying KSU susfs patch..."
-    git -C "$KSU_DRIVER" apply --check "$KSU_PATCH" 2>/dev/null \
-        && git -C "$KSU_DRIVER" apply "$KSU_PATCH" \
-        || echo "   (patch already applied or not applicable — continuing)"
+    (cd "$KSU_DRIVER" && (git apply --check "$KSU_PATCH" 2>/dev/null && git apply "$KSU_PATCH" || patch -p1 -N < "$KSU_PATCH" || echo "   (KSU susfs patch skipped or already applied)"))
 
     # Apply kernel-side patch to the kernel source root
     echo ">> Applying kernel susfs patch..."
-    git -C "$SRC" apply --check "$KERNEL_PATCH" 2>/dev/null \
-        && git -C "$SRC" apply "$KERNEL_PATCH" \
-        || echo "   (patch already applied or not applicable — continuing)"
+    (cd "$SRC" && (git apply --check "$KERNEL_PATCH" 2>/dev/null && git apply "$KERNEL_PATCH" || patch -p1 -N < "$KERNEL_PATCH" || echo "   (kernel susfs patch skipped or already applied)"))
 
     echo ">> SUSFS patches applied"
 else

@@ -9,7 +9,7 @@ export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -qq
 $SUDO apt-get install -y -qq \
     git build-essential bc bison flex libssl-dev libncurses-dev \
-    zip unzip python3 ccache device-tree-compiler lz4 cpio rsync
+    zip unzip python3 ccache device-tree-compiler lz4 cpio rsync patch
 
 echo
 echo "=== Tool versions ==="
