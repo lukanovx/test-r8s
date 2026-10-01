@@ -20,14 +20,23 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 | Input | Default | Notes |
 |---|---|---|
 | `branch` | `lineage-23.2` | Must match the LineageOS branch on your phone |
+| `kernel_ref` | *(empty)* | Kernel commit/tag to pin. Empty = pinned default, `latest` = branch tip |
 | `clang` | `r416183b` | Clang prebuilt version (from `BoardConfigCommon.mk`) |
-| `extra_config` | *(empty)* | Optional fragment: e.g. `config/docker-kernel.config` |
+| `extra_config` | *(empty)* | Optional fragment: e.g. `config/docker-kernel.config`. **Docker is OFF by default** |
 | `enable_ksu` | `false` | Build with KernelSU (official `tiann/KernelSU` driver) |
 | `enable_susfs` | `false` | Apply classic SUSFS patches (hide root). Requires `enable_ksu=true` |
 | `ksu_tag` | `v0.9.5` | `tiann/KernelSU` tag to pin — `v0.9.5` matches the classic SUSFS patch |
+| `susfs_ref` | *(empty)* | susfs4ksu commit/tag to pin. Empty = pinned default, `latest` = branch tip |
+| `boot_img_url` | `https://mirrorbits.lineageos.org/full/r8s/20260928/boot.img` | Stock boot.img URL (pinned 20260928 build). Set to `none`/empty to disable repacking |
 | `release` | `false` | Also publish as a GitHub Release |
 
 4. Wait ~15–20 min. Download the **Image** artifact from the run.
+
+> **Reproducibility:** the kernel and SUSFS sources are **pinned to exact commits**
+> by default (defined in `build/02-fontes.sh`). Set `kernel_ref` / `susfs_ref` to
+> `latest` to follow the branch tips instead. If you provide a `boot_img_url`, the
+> workflow also repacks a flashable `boot-new.img` (using the vendored
+> `toolchain/magiskboot`) and attaches it to the artifact.
 
 ---
 
@@ -99,6 +108,10 @@ The build emits a raw ARM64 `Image`. To make a flashable `boot.img`, swap that
 kernel into your stock boot image **on the host** — no Magisk on the phone, no
 on-device repacking:
 
+> CI does this automatically by default — the `boot_img_url` input is pre-filled
+> with the pinned 20260928 LineageOS `boot.img`, so every run also attaches a
+> ready `boot-new.img`. Set it to `none` (or empty) to skip repacking.
+
 ```bash
 # 1. Pull the stock boot.img from the ROM you are currently running
 #    (get it from the LineageOS zip, or extract it off the device with root)
@@ -129,6 +142,9 @@ heimdall flash --BOOT out/boot-new.img
 > keep `boot-original.img` safe — you need it to recover. Repacking invalidates
 > the AVB signature, but an unlocked Samsung Exynos bootloader does not enforce
 > it (validated on real Exynos 990 hardware by the upstream project).
+>
+> **`dtbo.img` is not needed** — only the `kernel` inside `boot.img` is swapped,
+> so just flash `boot.img`.
 
 ### Recovery
 
@@ -175,6 +191,9 @@ config/
 patches/
   10_enable_susfs_for_ksu_v0.9.5.patch  Classic SUSFS patch, resolved against KernelSU v0.9.5
   50_add_susfs_in_kernel-4.19-exynos990.patch  Tailored Samsung Exynos 990 SUSFS hooks
+
+toolchain/
+  magiskboot                Vendored static magiskboot (used for CI repack)
 
 flash/
   docker-check.sh           Audit running kernel against Docker requirements

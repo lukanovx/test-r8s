@@ -11,6 +11,10 @@ on:
         description: 'LineageOS kernel branch (must match your installed ROM)'
         required: true
         default: 'lineage-23.2'
+      kernel_ref:
+        description: 'Kernel commit/tag to pin. Empty = pinned default, or "latest" for branch tip.'
+        required: false
+        default: ''
       clang:
         description: 'Clang version (see TARGET_KERNEL_CLANG_VERSION in BoardConfigCommon.mk)'
         required: true
@@ -31,6 +35,14 @@ on:
         description: 'tiann/KernelSU tag to pin (default v0.9.5 — matches the classic SUSFS patch)'
         required: false
         default: 'v0.9.5'
+      susfs_ref:
+        description: 'susfs4ksu commit/tag to pin. Empty = pinned default, or "latest" for branch tip.'
+        required: false
+        default: ''
+      boot_img_url:
+        description: 'URL to a stock boot.img. Defaults to the pinned 20260928 LineageOS build. Set to "none" or empty to disable repacking.'
+        required: false
+        default: 'https://mirrorbits.lineageos.org/full/r8s/20260928/boot.img'
       release:
         description: 'Also publish as a GitHub Release (in addition to the artifact)'
         type: boolean
@@ -52,6 +64,8 @@ jobs:
       ENABLE_KSU:   ${{ inputs.enable_ksu }}
       ENABLE_SUSFS: ${{ inputs.enable_susfs }}
       KSU_TAG:      ${{ inputs.ksu_tag }}
+      KERNEL_REF:   ${{ inputs.kernel_ref }}
+      SUSFS_REF:    ${{ inputs.susfs_ref }}
       KBUILD_BUILD_USER: builder
       KBUILD_BUILD_HOST: github
 
@@ -134,6 +148,15 @@ jobs:
             && echo "  ::warning::USER_NS is ON — not expected" \
             || echo "  [ok] disabled"
 
+      - name: Repack boot.img (optional)
+        if: ${{ inputs.boot_img_url != '' && inputs.boot_img_url != 'none' }}
+        run: |
+          echo ">> Downloading stock boot.img"
+          curl -fsSL -o boot-original.img "${{ inputs.boot_img_url }}"
+          echo ">> Repacking with compiled Image"
+          ./flash/repack-boot.sh boot-original.img out/Image out/boot-new.img
+          echo ">> boot.img: $(stat -c%s out/boot-new.img) bytes  md5=$(md5sum out/boot-new.img | cut -d' ' -f1)"
+
       - name: Build summary
         run: |
           IMG=out/Image
@@ -163,6 +186,7 @@ jobs:
           name: Image-r8s-${{ inputs.branch }}-${{ github.run_number }}
           path: |
             out/Image
+            out/boot-new.img
             config-embedded.txt
           retention-days: 90
 
@@ -172,7 +196,10 @@ jobs:
         with:
           tag_name: kernel-r8s-${{ inputs.branch }}-${{ github.run_number }}
           name: Kernel r8s (${{ inputs.branch }}) #${{ github.run_number }}
-          files: out/Image
+          files: |
+            out/Image
+            out/boot-new.img
+          fail_on_unmatched_files: false
           body: |
             LineageOS kernel for Samsung Galaxy S20 FE (Exynos 990 / r8s / SM-G780F).
 

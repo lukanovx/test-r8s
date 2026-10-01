@@ -1,5 +1,5 @@
 #!/bin/bash
-# 02-fontes.sh — clone kernel source + Clang toolchain + apply SukiSU-Ultra + SUSFS
+# 02-fontes.sh — clone kernel source + Clang toolchain + apply KernelSU + SUSFS
 #
 # What this does:
 #   1. Clone (or update) LineageOS/android_kernel_samsung_universal9830 @ $BRANCH
@@ -10,10 +10,12 @@
 # Environment variables:
 #   KERNEL_BASE   — parent dir for src/ clang/ gcc/   (default: ~/kernel)
 #   BRANCH        — kernel branch                      (default: lineage-23.2)
+#   KERNEL_REF    — kernel commit/tag to pin, or 'latest' (default: pinned SHA)
 #   CLANG_VER     — clang prebuilt tag                 (default: r416183b)
-#   ENABLE_KSU    — apply SukiSU-Ultra driver          (default: false)
+#   ENABLE_KSU    — apply official KernelSU driver     (default: false)
 #   ENABLE_SUSFS  — apply SUSFS kernel patches         (default: false)
 #   KSU_TAG       — tiann/KernelSU tag/commit to pin   (default: v0.9.5)
+#   SUSFS_REF     — susfs4ksu commit/tag to pin, or 'latest' (default: pinned SHA)
 #
 # NOTE: The kernel repo on LineageOS already contains r8s.config with ALL
 # device-specific options. This script only sets up the source tree.
@@ -30,6 +32,9 @@ CLANG_VER="${CLANG_VER:-r416183b}"
 ENABLE_KSU="${ENABLE_KSU:-false}"
 ENABLE_SUSFS="${ENABLE_SUSFS:-false}"
 KSU_TAG="${KSU_TAG:-v0.9.5}"
+# Pinned refs for reproducible builds. Use 'latest' to follow the branch tip.
+KERNEL_REF="${KERNEL_REF:-0d6cd86ea14b8ff28f9099a4c122cd7d96d71434}"
+SUSFS_REF="${SUSFS_REF:-001e69919c6271f690fd00b17e4c721c9e599152}"
 
 mkdir -p "$BASE"
 
@@ -42,6 +47,13 @@ else
     echo "=== Cloning kernel (LineageOS android_kernel_samsung_universal9830 @ $BRANCH) ==="
     git clone --depth=1 -b "$BRANCH" \
         https://github.com/LineageOS/android_kernel_samsung_universal9830 "$SRC"
+fi
+
+# Pin to an exact commit/tag unless 'latest' was requested.
+if [ -n "$KERNEL_REF" ] && [ "$KERNEL_REF" != "latest" ]; then
+    echo ">> Pinning kernel to $KERNEL_REF"
+    git -C "$SRC" fetch --depth=1 origin "$KERNEL_REF"
+    git -C "$SRC" checkout -f FETCH_HEAD
 fi
 
 # ── 2. Clang toolchain ────────────────────────────────────────────────────────
@@ -107,6 +119,13 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
     else
         git clone --depth=1 -b kernel-4.19 \
             https://gitlab.com/simonpunk/susfs4ksu.git "$SUSFS_REPO"
+    fi
+
+    # Pin to an exact commit/tag unless 'latest' was requested.
+    if [ -n "$SUSFS_REF" ] && [ "$SUSFS_REF" != "latest" ]; then
+        echo ">> Pinning susfs4ksu to $SUSFS_REF"
+        git -C "$SUSFS_REPO" fetch --depth=1 origin "$SUSFS_REF"
+        git -C "$SUSFS_REPO" checkout -f FETCH_HEAD
     fi
 
     # Copy SUSFS fs and include files provided by SUSFS

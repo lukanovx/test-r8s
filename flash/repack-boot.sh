@@ -16,7 +16,11 @@
 #
 set -euo pipefail
 
-MB="${MAGISKBOOT:-/usr/bin/magiskboot}"
+# Prefer the vendored copy in toolchain/ (used by CI), fall back to the system one.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+MB="${MAGISKBOOT:-$REPO_ROOT/toolchain/magiskboot}"
+[ -x "$MB" ] || MB="/usr/bin/magiskboot"
 BOOT="${1:?usage: repack-boot.sh <boot.img> [Image] [out.img]}"
 IMAGE="${2:-out/Image}"
 OUT="${3:-out/boot-new.img}"
