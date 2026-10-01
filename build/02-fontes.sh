@@ -183,7 +183,7 @@ echo
 echo "exynos9830_defconfig : $([ -f "$SRC/arch/arm64/configs/exynos9830_defconfig" ] && echo present || echo MISSING)"
 echo "r8s.config           : $([ -f "$SRC/arch/arm64/configs/r8s.config" ] && echo present || echo MISSING)"
 echo "KSU driver           : $([ -L "$SRC/drivers/kernelsu" ] && echo "linked ($(readlink "$SRC/drivers/kernelsu"))" || echo not applied)"
-echo "SUSFS in fs/susfs    : $([ -d "$SRC/fs/susfs" ] && echo present || echo not applied)"
+echo "SUSFS in fs/susfs.c  : $([ -f "$SRC/fs/susfs.c" ] && echo present || echo not applied)"
 echo
 du -sh "$SRC" "$CLANG" 2>/dev/null
 echo

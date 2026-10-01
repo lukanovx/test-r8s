@@ -48,6 +48,9 @@ on:
         type: boolean
         default: false
 
+# Required so softprops/action-gh-release can create the release + tag.
+permissions:
+  contents: write
 
 jobs:
   build:
