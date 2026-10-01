@@ -22,6 +22,9 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 | `branch` | `lineage-23.2` | Must match the LineageOS branch on your phone |
 | `clang` | `r416183b` | Clang prebuilt version (from `BoardConfigCommon.mk`) |
 | `extra_config` | *(empty)* | Optional fragment: e.g. `config/docker-kernel.config` |
+| `enable_ksu` | `false` | Build with KernelSU (official `tiann/KernelSU` driver) |
+| `enable_susfs` | `false` | Apply classic SUSFS patches (hide root). Requires `enable_ksu=true` |
+| `ksu_tag` | `v0.9.5` | `tiann/KernelSU` tag to pin — `v0.9.5` matches the classic SUSFS patch |
 | `release` | `false` | Also publish as a GitHub Release |
 
 4. Wait ~15–20 min. Download the **Image** artifact from the run.
@@ -43,7 +46,8 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 ```
 exynos9830_defconfig        ← base for all Exynos 990 devices
 r8s.config                  ← r8s hardware (QCA WiFi/BT, MHI modem, cameras, display, sensors…)
-[extra_config]              ← optional fragment (docker-kernel.config, KSU patch, etc.)
+config/ksu.config           ← merged automatically when enable_ksu=true (KernelSU + SUSFS)
+[extra_config]              ← optional fragment (docker-kernel.config)
 ```
 
 The build script validates **each merge step** and aborts if any required option was silently dropped by `olddefconfig`.
@@ -58,9 +62,34 @@ The build script runs three gates and **aborts** if any fails:
 |---|---|
 | **Gate 1** | `CONFIG_LTO_CLANG=y` survived `olddefconfig` |
 | **Gate 2** | Key r8s options present: `MODEL_R8S`, `QCA_CLD_WLAN`, `MHI_BUS`, `TOUCHSCREEN_STM_FTS5CU56A`, `CAMERA_RST_V08` |
+| **Gate 2b** | (when `enable_ksu=true`) `CONFIG_KSU`, `CONFIG_KPROBES`, `CONFIG_KALLSYMS(_ALL)`, and `CONFIG_KSU_SUSFS` (when `enable_susfs=true`) |
 | **Gate 3** | Image size ≤ 44 MB (larger = LTO missing = will not boot) |
 
 After the build, the workflow also reads the config **from inside the Image binary** (via `extract-ikconfig`) and verifies all options one more time.
+
+---
+
+## KernelSU + SUSFS (optional)
+
+Enable via the workflow inputs `enable_ksu` and `enable_susfs`.
+
+- **KernelSU:** official `tiann/KernelSU` pinned to **`v0.9.5`** — the last release before
+  upstream dropped non-GKI support.
+- **SUSFS:** classic `simonpunk/susfs4ksu` `kernel-4.19` ABI (`SUSFS_VERSION "v1.5.5"`).
+
+> **Why not SukiSU-Ultra?** Its `builtin` branch implements the *modern/enchanted* SUSFS ABI
+> (`SUSFS_MAGIC`, `void __user **`, `AS_FLAGS_*` on `i_mapping->flags`), which is incompatible
+> with the classic susfs4ksu `kernel-4.19` headers. Mixing the two produced the
+> `SUSFS_MAGIC` / `CMD_SUSFS_ADD_SUS_MAP` compile errors. This repo uses the classic lineage
+> for stability; the modern lineage can be revisited as a later phase.
+
+Patch flow (`build/02-fontes.sh`):
+
+1. Symlink the `tiann/KernelSU@v0.9.5` driver into `drivers/kernelsu`.
+2. Apply `patches/10_enable_susfs_for_ksu_v0.9.5.patch` — simonpunk's classic SUSFS patch,
+   pre-resolved against v0.9.5.
+3. Copy `susfs4ksu` `fs/*` + `include/linux/*` into the kernel tree.
+4. Apply `patches/50_add_susfs_in_kernel-4.19-exynos990.patch` — tailored Samsung Exynos 990 hooks.
 
 ---
 
@@ -131,6 +160,11 @@ build/
 config/
   docker-kernel.config      Enable Docker: namespaces, bridge, netfilter, cgroups
   docker-minimal.config     Minimal Docker (required options only)
+  ksu.config                KernelSU + classic SUSFS options (merged when enable_ksu=true)
+
+patches/
+  10_enable_susfs_for_ksu_v0.9.5.patch  Classic SUSFS patch, resolved against KernelSU v0.9.5
+  50_add_susfs_in_kernel-4.19-exynos990.patch  Tailored Samsung Exynos 990 SUSFS hooks
 
 flash/
   docker-check.sh           Audit running kernel against Docker requirements

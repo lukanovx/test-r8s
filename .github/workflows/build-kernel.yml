@@ -20,17 +20,17 @@ on:
         required: false
         default: ''
       enable_ksu:
-        description: 'Apply SukiSU-Ultra kernel driver (KernelSU root management)'
+        description: 'Apply KernelSU kernel driver (official tiann/KernelSU)'
         type: boolean
         default: false
       enable_susfs:
-        description: 'Apply SUSFS kernel patches (hide root from apps). Requires enable_ksu=true.'
+        description: 'Apply classic SUSFS kernel patches (hide root from apps). Requires enable_ksu=true.'
         type: boolean
         default: false
       ksu_tag:
-        description: 'SukiSU-Ultra tag or commit to pin (leave empty for latest tagged release)'
+        description: 'tiann/KernelSU tag to pin (default v0.9.5 — matches the classic SUSFS patch)'
         required: false
-        default: ''
+        default: 'v0.9.5'
       release:
         description: 'Also publish as a GitHub Release (in addition to the artifact)'
         type: boolean

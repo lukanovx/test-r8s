@@ -4,7 +4,7 @@
 # What this does:
 #   1. Clone (or update) LineageOS/android_kernel_samsung_universal9830 @ $BRANCH
 #   2. Clone clang-${CLANG_VER} prebuilt
-#   3. If ENABLE_KSU=true: apply SukiSU-Ultra kernel driver (setup.sh symlink method)
+#   3. If ENABLE_KSU=true: apply official KernelSU kernel driver (symlink method)
 #   4. If ENABLE_SUSFS=true: apply SUSFS4KSU kernel patches (kernel-4.19 branch)
 #
 # Environment variables:
@@ -13,7 +13,7 @@
 #   CLANG_VER     — clang prebuilt tag                 (default: r416183b)
 #   ENABLE_KSU    — apply SukiSU-Ultra driver          (default: false)
 #   ENABLE_SUSFS  — apply SUSFS kernel patches         (default: false)
-#   KSU_TAG       — SukiSU-Ultra tag/commit to pin     (default: latest tag)
+#   KSU_TAG       — tiann/KernelSU tag/commit to pin   (default: v0.9.5)
 #
 # NOTE: The kernel repo on LineageOS already contains r8s.config with ALL
 # device-specific options. This script only sets up the source tree.
@@ -29,7 +29,7 @@ BRANCH="${BRANCH:-lineage-23.2}"
 CLANG_VER="${CLANG_VER:-r416183b}"
 ENABLE_KSU="${ENABLE_KSU:-false}"
 ENABLE_SUSFS="${ENABLE_SUSFS:-false}"
-KSU_TAG="${KSU_TAG:-}"
+KSU_TAG="${KSU_TAG:-v0.9.5}"
 
 mkdir -p "$BASE"
 
@@ -54,26 +54,23 @@ else
         "$CLANG"
 fi
 
-# ── 3. SukiSU-Ultra kernel driver ─────────────────────────────────────────────
-# We checkout the official 'builtin' branch of SukiSU-Ultra for non-GKI / Linux 4.19.
-# It provides native in-tree compilation and built-in SUSFS inline hooks detection.
+# ── 3. KernelSU kernel driver (official, classic SUSFS lineage) ───────────────
+# We pin official tiann/KernelSU to v0.9.5 — the last release before upstream
+# dropped non-GKI support, and the exact base simonpunk's classic SUSFS patch
+# targets. SukiSU-Ultra is NOT used here: its 'builtin' branch only implements
+# the modern/enchanted SUSFS ABI (SUSFS_MAGIC), incompatible with susfs4ksu
+# kernel-4.19.
 if [ "$ENABLE_KSU" = "true" ]; then
     echo
-    echo "=== Applying SukiSU-Ultra kernel driver (builtin branch) ==="
+    echo "=== Applying KernelSU kernel driver (tiann/KernelSU @ ${KSU_TAG}) ==="
 
     KSU_REPO="$BASE/KernelSU"
     if [ -d "$KSU_REPO/.git" ]; then
-        echo ">> SukiSU-Ultra already cloned; updating builtin branch"
-        git -C "$KSU_REPO" fetch --depth=1 origin builtin
-        git -C "$KSU_REPO" checkout -B builtin origin/builtin
+        echo ">> KernelSU already cloned; updating ${KSU_TAG}"
+        git -C "$KSU_REPO" fetch --depth=1 origin "refs/tags/${KSU_TAG}:refs/tags/${KSU_TAG}"
+        git -C "$KSU_REPO" checkout -B "ksu-${KSU_TAG}" "refs/tags/${KSU_TAG}"
     else
-        git clone --depth=1 -b builtin https://github.com/SukiSU-Ultra/SukiSU-Ultra "$KSU_REPO"
-    fi
-
-    # If a specific commit or branch was requested, checkout that
-    if [ -n "$KSU_TAG" ]; then
-        echo ">> Checking out requested KSU ref: $KSU_TAG"
-        git -C "$KSU_REPO" checkout "$KSU_TAG"
+        git clone --depth=1 --branch "${KSU_TAG}" https://github.com/tiann/KernelSU "$KSU_REPO"
     fi
 
     # Link driver into kernel drivers/
@@ -85,9 +82,9 @@ if [ "$ENABLE_KSU" = "true" ]; then
     # Also link $SRC/KernelSU for compatibility
     [ -e "$SRC/KernelSU" ] || ln -sfn "$KSU_REPO" "$SRC/KernelSU"
 
-    echo ">> SukiSU-Ultra driver linked at $SRC/drivers/kernelsu"
+    echo ">> KernelSU driver linked at $SRC/drivers/kernelsu"
 else
-    echo ">> ENABLE_KSU=false — skipping SukiSU-Ultra integration"
+    echo ">> ENABLE_KSU=false — skipping KernelSU integration"
 fi
 
 # ── 4. SUSFS4KSU kernel patches ───────────────────────────────────────────────
@@ -98,7 +95,7 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
     echo "=== Applying SUSFS4KSU kernel patches (kernel-4.19) ==="
 
     if [ "$ENABLE_KSU" != "true" ]; then
-        echo "!! SUSFS requires SukiSU-Ultra (ENABLE_KSU=true) to be applied first"
+        echo "!! SUSFS requires KernelSU (ENABLE_KSU=true) to be applied first"
         exit 1
     fi
 
@@ -122,8 +119,21 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
         cp -rv "$SUSFS_REPO/kernel_patches/include/linux/"* "$SRC/include/linux/"
     fi
 
-    # SukiSU-Ultra's 'builtin' branch already contains native SUSFS inline hook support.
-    # Therefore, 10_enable_susfs_for_ksu.patch is NOT needed (and incompatible).
+    # Apply the classic SUSFS patch to the KernelSU driver.
+    # This is simonpunk's 10_enable_susfs_for_ksu.patch, pre-resolved against
+    # tiann/KernelSU v0.9.5 (the upstream patch has one selinux.c hunk that does
+    # not apply cleanly). See patches/ for provenance.
+    KSU_SUSFS_PATCH="$PROJECT_DIR/patches/10_enable_susfs_for_ksu_v0.9.5.patch"
+    if [ -f "$KSU_SUSFS_PATCH" ]; then
+        echo ">> Applying resolved KernelSU SUSFS patch: $KSU_SUSFS_PATCH"
+        git -C "$KSU_REPO" apply "$KSU_SUSFS_PATCH" || {
+            echo "!! Failed to apply $KSU_SUSFS_PATCH"
+            exit 1
+        }
+    else
+        echo "!! Resolved KernelSU SUSFS patch not found at $KSU_SUSFS_PATCH"
+        exit 1
+    fi
 
     # Apply tailored Samsung Exynos 990 / universal9830 SUSFS patch
     SAMSUNG_SUSFS_PATCH="$PROJECT_DIR/patches/50_add_susfs_in_kernel-4.19-exynos990.patch"
