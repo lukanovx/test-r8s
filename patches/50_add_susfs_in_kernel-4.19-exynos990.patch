@@ -862,11 +862,11 @@ diff -u -r a/fs/overlayfs/super.c b/fs/overlayfs/super.c
 diff -u -r a/fs/proc/cmdline.c b/fs/proc/cmdline.c
 --- a/fs/proc/cmdline.c	2026-10-01 18:51:06.608870968 +0300
 +++ b/fs/proc/cmdline.c	2026-10-01 22:45:01.808500806 +0300
-@@ -10,10 +10,18 @@
+@@ -10,10 +10,19 @@
  	FLAG_REPLACE,
  };
  
--static char new_command_line[COMMAND_LINE_SIZE];
+ static char new_command_line[COMMAND_LINE_SIZE];
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +extern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 +#endif
