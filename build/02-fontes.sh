@@ -55,42 +55,36 @@ else
 fi
 
 # ── 3. SukiSU-Ultra kernel driver ─────────────────────────────────────────────
-# The setup.sh approach: creates a symlink at drivers/kernelsu → KernelSU/kernel/
-# and patches drivers/Makefile + drivers/Kconfig to include it.
-# This is a non-intrusive integration — does NOT modify any existing kernel file.
+# We checkout the official 'builtin' branch of SukiSU-Ultra for non-GKI / Linux 4.19.
+# It provides native in-tree compilation and built-in SUSFS inline hooks detection.
 if [ "$ENABLE_KSU" = "true" ]; then
     echo
-    echo "=== Applying SukiSU-Ultra kernel driver ==="
+    echo "=== Applying SukiSU-Ultra kernel driver (builtin branch) ==="
 
     KSU_REPO="$BASE/KernelSU"
     if [ -d "$KSU_REPO/.git" ]; then
-        echo ">> SukiSU-Ultra already cloned; updating"
-        git -C "$KSU_REPO" fetch --depth=1 origin main
-        git -C "$KSU_REPO" checkout -B main origin/main
+        echo ">> SukiSU-Ultra already cloned; updating builtin branch"
+        git -C "$KSU_REPO" fetch --depth=1 origin builtin
+        git -C "$KSU_REPO" checkout -B builtin origin/builtin
     else
-        git clone --depth=1 https://github.com/SukiSU-Ultra/SukiSU-Ultra "$KSU_REPO"
+        git clone --depth=1 -b builtin https://github.com/SukiSU-Ultra/SukiSU-Ultra "$KSU_REPO"
     fi
 
-    # If a specific tag/commit was requested, check it out
+    # If a specific commit or branch was requested, checkout that
     if [ -n "$KSU_TAG" ]; then
-        echo ">> Pinning SukiSU-Ultra to $KSU_TAG"
-        git -C "$KSU_REPO" fetch --depth=1 origin "$KSU_TAG" 2>/dev/null || true
+        echo ">> Checking out requested KSU ref: $KSU_TAG"
         git -C "$KSU_REPO" checkout "$KSU_TAG"
-    else
-        # Checkout latest tagged release
-        LATEST_TAG=$(git -C "$KSU_REPO" describe --abbrev=0 --tags 2>/dev/null || echo "")
-        if [ -n "$LATEST_TAG" ]; then
-            git -C "$KSU_REPO" checkout "$LATEST_TAG"
-            echo ">> Checked out latest tag: $LATEST_TAG"
-        fi
     fi
 
-    # Run the official setup.sh from inside the kernel source root
-    # It detects drivers/ automatically and creates the symlink
-    (
-        cd "$SRC"
-        sh "$KSU_REPO/kernel/setup.sh"
-    )
+    # Link driver into kernel drivers/
+    DRIVER_DIR="$SRC/drivers"
+    ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KSU_REPO/kernel")" "$DRIVER_DIR/kernelsu"
+    grep -q "kernelsu" "$DRIVER_DIR/Makefile" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_DIR/Makefile"
+    grep -q "source \"drivers/kernelsu/Kconfig\"" "$DRIVER_DIR/Kconfig" || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" "$DRIVER_DIR/Kconfig"
+
+    # Also link $SRC/KernelSU for compatibility
+    [ -e "$SRC/KernelSU" ] || ln -sfn "$KSU_REPO" "$SRC/KernelSU"
+
     echo ">> SukiSU-Ultra driver linked at $SRC/drivers/kernelsu"
 else
     echo ">> ENABLE_KSU=false — skipping SukiSU-Ultra integration"
@@ -98,8 +92,7 @@ fi
 
 # ── 4. SUSFS4KSU kernel patches ───────────────────────────────────────────────
 # SUSFS provides kernel-space hooks for hiding root/mounts from apps.
-# It requires kernel-side patches applied via git apply.
-# Official patch repo: https://gitlab.com/simonpunk/susfs4ksu (branch: kernel-4.19)
+# Repository: https://gitlab.com/simonpunk/susfs4ksu (branch: kernel-4.19)
 if [ "$ENABLE_SUSFS" = "true" ]; then
     echo
     echo "=== Applying SUSFS4KSU kernel patches (kernel-4.19) ==="
@@ -129,25 +122,23 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
         cp -rv "$SUSFS_REPO/kernel_patches/include/linux/"* "$SRC/include/linux/"
     fi
 
-    # Apply the two required patch files to the kernel source
-    # 1. The KSU-side patch (adds SUSFS support to the KernelSU driver)
-    # 2. The kernel-side patch (adds susfs syscall hooks to fs/ and include/)
-    KSU_PATCH="$SUSFS_REPO/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
-    KERNEL_PATCH="$SUSFS_REPO/kernel_patches/50_add_susfs_in_kernel-4.19.patch"
+    # SukiSU-Ultra's 'builtin' branch already contains native SUSFS inline hook support.
+    # Therefore, 10_enable_susfs_for_ksu.patch is NOT needed (and incompatible).
 
-    [ -f "$KSU_PATCH" ] || { echo "!! KSU susfs patch not found: $KSU_PATCH"; exit 1; }
-    [ -f "$KERNEL_PATCH" ] || { echo "!! Kernel susfs patch not found: $KERNEL_PATCH"; exit 1; }
+    # Apply tailored Samsung Exynos 990 / universal9830 SUSFS patch
+    SAMSUNG_SUSFS_PATCH="$PROJECT_DIR/patches/50_add_susfs_in_kernel-4.19-exynos990.patch"
+    if [ -f "$SAMSUNG_SUSFS_PATCH" ]; then
+        echo ">> Applying tailored Samsung Exynos 990 SUSFS patch: $SAMSUNG_SUSFS_PATCH"
+        patch -d "$SRC" -p1 -N --forward < "$SAMSUNG_SUSFS_PATCH" || {
+            echo "!! Failed to apply $SAMSUNG_SUSFS_PATCH"
+            exit 1
+        }
+    else
+        echo "!! Tailored SUSFS patch not found at $SAMSUNG_SUSFS_PATCH"
+        exit 1
+    fi
 
-    # Apply KSU-side patch inside the KernelSU driver directory
-    KSU_DRIVER="$SRC/KernelSU"
-    echo ">> Applying KSU susfs patch..."
-    (cd "$KSU_DRIVER" && (git apply --check "$KSU_PATCH" 2>/dev/null && git apply "$KSU_PATCH" || patch -p1 -N < "$KSU_PATCH" || echo "   (KSU susfs patch skipped or already applied)"))
-
-    # Apply kernel-side patch to the kernel source root
-    echo ">> Applying kernel susfs patch..."
-    (cd "$SRC" && (git apply --check "$KERNEL_PATCH" 2>/dev/null && git apply "$KERNEL_PATCH" || patch -p1 -N < "$KERNEL_PATCH" || echo "   (kernel susfs patch skipped or already applied)"))
-
-    echo ">> SUSFS patches applied"
+    echo ">> SUSFS patches applied successfully"
 else
     echo ">> ENABLE_SUSFS=false — skipping SUSFS patches"
 fi
