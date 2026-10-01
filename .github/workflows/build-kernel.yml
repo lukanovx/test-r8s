@@ -1,0 +1,184 @@
+name: Build kernel (r8s)
+
+# Trigger manually: Actions → Build kernel (r8s) → Run workflow.
+# Compiles the LineageOS kernel for the Samsung Galaxy S20 FE
+# (Exynos 990, SM-G780F, codename r8s) without requiring a full
+# AOSP checkout — the runner fetches only what it needs.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'LineageOS kernel branch (must match your installed ROM)'
+        required: true
+        default: 'lineage-23.2'
+      clang:
+        description: 'Clang version (see TARGET_KERNEL_CLANG_VERSION in BoardConfigCommon.mk)'
+        required: true
+        default: 'r416183b'
+      extra_config:
+        description: 'Extra config fragment to merge on top (e.g. config/docker-kernel.config). Leave empty to skip.'
+        required: false
+        default: ''
+      enable_ksu:
+        description: 'Apply SukiSU-Ultra kernel driver (KernelSU root management)'
+        type: boolean
+        default: false
+      enable_susfs:
+        description: 'Apply SUSFS kernel patches (hide root from apps). Requires enable_ksu=true.'
+        type: boolean
+        default: false
+      ksu_tag:
+        description: 'SukiSU-Ultra tag or commit to pin (leave empty for latest tagged release)'
+        required: false
+        default: ''
+      release:
+        description: 'Also publish as a GitHub Release (in addition to the artifact)'
+        type: boolean
+        default: false
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      # Kernel source is cloned OUTSIDE the repo checkout, alongside toolchains
+      KERNEL_BASE: ${{ github.workspace }}/../kernel
+      BRANCH:      ${{ inputs.branch }}
+      CLANG_VER:   ${{ inputs.clang }}
+      DEVICE:      r8s
+      EXTRA_CONFIG: ${{ inputs.extra_config }}
+      ENABLE_KSU:   ${{ inputs.enable_ksu }}
+      ENABLE_SUSFS: ${{ inputs.enable_susfs }}
+      KSU_TAG:      ${{ inputs.ksu_tag }}
+      KBUILD_BUILD_USER: builder
+      KBUILD_BUILD_HOST: github
+
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      # The runner starts with ~14 GB free; we need ~9 GB.
+      # Removing pre-installed SDKs frees ~25 GB.
+      - name: Free disk space
+        run: |
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean
+          echo "after:"; df -h / | tail -1
+
+      - name: Install build dependencies
+        run: sudo bash build/01-deps.sh
+
+      - name: Clone kernel source + Clang toolchain
+        run: bash build/02-fontes.sh
+
+      - name: Clone AOSP binutils (aarch64-linux-android-4.9)
+        run: bash build/03-gcc.sh
+
+      - name: Build kernel
+        run: bash build/04-build.sh
+
+      # Decisive check: extract config from INSIDE the Image binary.
+      # This is what the device reports in /proc/config.gz.
+      - name: Verify built image
+        run: |
+          SRC="$KERNEL_BASE/src"
+          IMG="out/Image"
+          "$SRC/scripts/extract-ikconfig" "$IMG" > config-embedded.txt
+          echo "Extracted config: $(wc -l < config-embedded.txt) lines"
+          echo
+
+          MISSING=0
+          # Core baseline options always verified for r8s
+          CHECKS="CONFIG_MODEL_R8S CONFIG_LTO_CLANG CONFIG_SECCOMP \
+                  CONFIG_MEMCG CONFIG_OVERLAY_FS CONFIG_VETH"
+
+          # If extra_config was used (e.g. docker-kernel.config), verify Docker requirements
+          if [[ "${{ inputs.extra_config }}" =~ "docker" ]]; then
+            echo ">> Checking Docker requirements..."
+            CHECKS="$CHECKS CONFIG_IPC_NS CONFIG_POSIX_MQUEUE CONFIG_CGROUP_DEVICE \
+                    CONFIG_BRIDGE CONFIG_BRIDGE_NETFILTER CONFIG_LLC CONFIG_STP \
+                    CONFIG_NF_NAT CONFIG_IP_NF_NAT CONFIG_IP_NF_FILTER \
+                    CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_NF_CONNTRACK"
+          fi
+
+          # If KSU was enabled, verify KSU options
+          if [ "${{ inputs.enable_ksu }}" = "true" ]; then
+            echo ">> Checking KernelSU requirements..."
+            CHECKS="$CHECKS CONFIG_KSU CONFIG_KPROBES CONFIG_KALLSYMS CONFIG_KALLSYMS_ALL"
+          fi
+
+          # If SUSFS was enabled, verify SUSFS options
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+            echo ">> Checking SUSFS requirements..."
+            CHECKS="$CHECKS CONFIG_KSU_SUSFS"
+          fi
+
+          for c in $CHECKS; do
+            v=$(grep -E "^${c}=" config-embedded.txt | cut -d= -f2)
+            if [ -n "$v" ]; then printf '  [%s] %s\n' "$v" "$c"
+            else printf '  [MISSING] %s\n' "$c"; MISSING=$((MISSING+1)); fi
+          done
+          echo
+          if [ "$MISSING" != "0" ]; then
+            echo "::error::$MISSING required option(s) missing from the image — do not flash"
+            exit 1
+          fi
+          echo "All targeted options present in embedded config"
+          echo
+          echo "USER_NS should be OFF (intentional):"
+          grep -q "^CONFIG_USER_NS=y" config-embedded.txt \
+            && echo "  ::warning::USER_NS is ON — not expected" \
+            || echo "  [ok] disabled"
+
+      - name: Build summary
+        run: |
+          IMG=out/Image
+          {
+            echo "## Kernel built — r8s (SM-G780F, S20 FE Exynos)"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Branch | \`${BRANCH}\` |"
+            echo "| Device | \`r8s\` — SM-G780F (Galaxy S20 FE Exynos) |"
+            echo "| Clang  | \`${CLANG_VER}\` |"
+            echo "| Extra config | \`${EXTRA_CONFIG:-none}\` |"
+            echo "| Kernel commit | \`$(git -C "$KERNEL_BASE/src" rev-parse --short=12 HEAD)\` |"
+            echo "| Size | $(stat -c %s "$IMG") bytes |"
+            echo "| md5  | \`$(md5sum "$IMG" | cut -d' ' -f1)\` |"
+            echo
+            echo '```'
+            strings "$IMG" | grep -m1 "^Linux version"
+            echo '```'
+            echo
+            echo "Download the **Image** artifact, push to the device, and follow the \`flash/\` instructions."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-r8s-${{ inputs.branch }}-${{ github.run_number }}
+          path: |
+            out/Image
+            config-embedded.txt
+          retention-days: 90
+
+      - name: Publish release
+        if: ${{ inputs.release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-r8s-${{ inputs.branch }}-${{ github.run_number }}
+          name: Kernel r8s (${{ inputs.branch }}) #${{ github.run_number }}
+          files: out/Image
+          body: |
+            LineageOS kernel for Samsung Galaxy S20 FE (Exynos 990 / r8s / SM-G780F).
+
+            - Branch: `${{ inputs.branch }}`
+            - Clang: `${{ inputs.clang }}`
+            - Extra config: `${{ inputs.extra_config || 'none' }}`
+
+            Built with `LLVM=1 LLVM_IAS=1`, verified option-by-option inside the image.
+            See `flash/` in the README for flashing instructions.
