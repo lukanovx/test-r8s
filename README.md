@@ -93,36 +93,46 @@ Patch flow (`build/02-fontes.sh`):
 
 ---
 
-## Flashing
+## Repacking & flashing (all on Linux)
 
-Requirements: unlocked bootloader, Magisk installed, `adb` on your PC.
+The build emits a raw ARM64 `Image`. To make a flashable `boot.img`, swap that
+kernel into your stock boot image **on the host** — no Magisk on the phone, no
+on-device repacking:
 
 ```bash
-# 1. Push new kernel
-adb push out/Image /data/local/tmp/Image
+# 1. Pull the stock boot.img from the ROM you are currently running
+#    (get it from the LineageOS zip, or extract it off the device with root)
+adb shell su -c 'dd if=/dev/block/by-name/boot of=/sdcard/boot-original.img bs=4096'
+adb pull /sdcard/boot-original.img .
 
-# 2. Push flash helpers
-adb push flash/kernel-swap.sh flash/verify-patched.sh /sdcard/Download/
-adb shell su -c 'cp /sdcard/Download/*.sh /data/local/tmp/ && chmod 755 /data/local/tmp/*.sh'
-
-# 3. Swap kernel inside existing boot.img (does NOT write to partition yet)
-adb shell su -c 'sh /data/local/tmp/kernel-swap.sh'
-
-# 4. Pull the backup — DO NOT SKIP THIS
-adb pull /sdcard/Download/boot-original.img .
-
-# 5. (Optional but recommended) Patch through the Magisk app to keep root
-#    Magisk app → Install → Select and patch a file → boot-novo.img
-
-# 6. Flash
-adb shell su -c 'dd if=/data/local/tmp/boot-novo.img of=/dev/block/by-name/boot bs=4096'
-adb shell su -c sync
-adb reboot
+# 2. Rebuild boot.img on the PC (uses /usr/bin/magiskboot)
+./flash/repack-boot.sh boot-original.img out/Image out/boot-new.img
 ```
+
+`repack-boot.sh` preserves the original header (base/offsets/cmdline), ramdisk
+and DTB, and only replaces the kernel payload — which is exactly what this
+device's bootloader expects (it jumps directly into the raw `Image`).
+
+Then flash `out/boot-new.img` one of two ways:
+
+```bash
+# A. Rooted recovery (dd)
+adb push out/boot-new.img /sdcard/boot-new.img
+adb shell su -c 'dd if=/sdcard/boot-new.img of=/dev/block/by-name/boot bs=4096 && sync'
+adb reboot
+
+# B. Download mode + Heimdall (Linux, no root needed)
+heimdall flash --BOOT out/boot-new.img
+```
+
+> **Notes:** use the `boot.img` from the *same* ROM build you're running, and
+> keep `boot-original.img` safe — you need it to recover. Repacking invalidates
+> the AVB signature, but an unlocked Samsung Exynos bootloader does not enforce
+> it (validated on real Exynos 990 hardware by the upstream project).
 
 ### Recovery
 
-If the device doesn't boot, use your PC backup:
+If the device doesn't boot, restore the original boot image:
 
 ```bash
 # Enter recovery: Power+VolDown ~10s → release → VolUp+Power with USB connected
@@ -168,7 +178,8 @@ patches/
 
 flash/
   docker-check.sh           Audit running kernel against Docker requirements
-  kernel-swap.sh            Swap kernel inside boot.img using magiskboot
+  repack-boot.sh            Rebuild boot.img on the HOST (magiskboot) — the recommended flow
+  kernel-swap.sh            (legacy) On-device boot.img repack via Magisk's magiskboot
   verify-patched.sh         Verify image integrity before flashing
   flash-kernel.sh           Flash with readback verification
   repack-test.sh            Test magiskboot idempotency
