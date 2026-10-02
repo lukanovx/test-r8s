@@ -94,6 +94,23 @@ if [ "$ENABLE_KSU" = "true" ]; then
     # Also link $SRC/KernelSU for compatibility
     [ -e "$SRC/KernelSU" ] || ln -sfn "$KSU_REPO" "$SRC/KernelSU"
 
+    # Apply KernelSU's manual (non-kprobe) hooks to the kernel source.
+    # CONFIG_KPROBES stays OFF (matching stock): Samsung's TZASC hardware
+    # blocks kprobes' runtime text-patching and panics on it. KSU therefore
+    # hooks syscalls via direct calls (official kernelsu.org non-GKI manual
+    # integration), provided by this patch.
+    KSU_HOOKS_PATCH="$PROJECT_DIR/patches/60_ksu_manual_hooks_exynos990.patch"
+    if [ -f "$KSU_HOOKS_PATCH" ]; then
+        echo ">> Applying KernelSU manual hooks patch: $KSU_HOOKS_PATCH"
+        patch -d "$SRC" -p1 -N --forward < "$KSU_HOOKS_PATCH" || {
+            echo "!! Failed to apply $KSU_HOOKS_PATCH"
+            exit 1
+        }
+    else
+        echo "!! KernelSU manual hooks patch not found at $KSU_HOOKS_PATCH"
+        exit 1
+    fi
+
     echo ">> KernelSU driver linked at $SRC/drivers/kernelsu"
 else
     echo ">> ENABLE_KSU=false — skipping KernelSU integration"

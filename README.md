@@ -71,7 +71,7 @@ The build script runs three gates and **aborts** if any fails:
 |---|---|
 | **Gate 1** | `CONFIG_LTO_CLANG=y` survived `olddefconfig` |
 | **Gate 2** | Key r8s options present: `MODEL_R8S`, `QCA_CLD_WLAN`, `MHI_BUS`, `TOUCHSCREEN_STM_FTS5CU56A`, `CAMERA_RST_V08` |
-| **Gate 2b** | (when `enable_ksu=true`) `CONFIG_KSU`, `CONFIG_KPROBES`, `CONFIG_KALLSYMS(_ALL)`, and `CONFIG_KSU_SUSFS` (when `enable_susfs=true`) |
+| **Gate 2b** | (when `enable_ksu=true`) `CONFIG_KSU`, `CONFIG_KALLSYMS(_ALL)`, and `CONFIG_KSU_SUSFS` (when `enable_susfs=true`) |
 | **Gate 3** | Image size ≤ 44 MB (larger = LTO missing = will not boot) |
 
 After the build, the workflow also reads the config **from inside the Image binary** (via `extract-ikconfig`) and verifies all options one more time.
@@ -83,7 +83,8 @@ After the build, the workflow also reads the config **from inside the Image bina
 Enable via the workflow inputs `enable_ksu` and `enable_susfs`.
 
 - **KernelSU:** official `tiann/KernelSU` pinned to **`v0.9.5`** — the last release before
-  upstream dropped non-GKI support.
+  upstream dropped non-GKI support. Uses **manual (non-kprobe) hooks** — `CONFIG_KPROBES` is
+  left OFF because Samsung's TZASC hardware blocks kprobes' runtime text-patching and panics.
 - **SUSFS:** classic `simonpunk/susfs4ksu` `kernel-4.19` ABI (`SUSFS_VERSION "v1.5.5"`).
 
 > **Why not SukiSU-Ultra?** Its `builtin` branch implements the *modern/enchanted* SUSFS ABI
@@ -95,10 +96,12 @@ Enable via the workflow inputs `enable_ksu` and `enable_susfs`.
 Patch flow (`build/02-fontes.sh`):
 
 1. Symlink the `tiann/KernelSU@v0.9.5` driver into `drivers/kernelsu`.
-2. Apply `patches/10_enable_susfs_for_ksu_v0.9.5.patch` — simonpunk's classic SUSFS patch,
+2. Apply `patches/60_ksu_manual_hooks_exynos990.patch` — official KernelSU non-GKI manual hooks
+   (`exec`/`open`/`read_write`/`stat`/`devpts`/`input`), for the non-kprobe path.
+3. Apply `patches/10_enable_susfs_for_ksu_v0.9.5.patch` — simonpunk's classic SUSFS patch,
    pre-resolved against v0.9.5.
-3. Copy `susfs4ksu` `fs/*` + `include/linux/*` into the kernel tree.
-4. Apply `patches/50_add_susfs_in_kernel-4.19-exynos990.patch` — tailored Samsung Exynos 990 hooks.
+4. Copy `susfs4ksu` `fs/*` + `include/linux/*` into the kernel tree.
+5. Apply `patches/50_add_susfs_in_kernel-4.19-exynos990.patch` — tailored Samsung Exynos 990 hooks.
 
 ---
 
@@ -191,6 +194,7 @@ config/
 patches/
   10_enable_susfs_for_ksu_v0.9.5.patch  Classic SUSFS patch, resolved against KernelSU v0.9.5
   50_add_susfs_in_kernel-4.19-exynos990.patch  Tailored Samsung Exynos 990 SUSFS hooks
+  60_ksu_manual_hooks_exynos990.patch  KernelSU non-kprobe manual hooks (exec/open/read_write/stat/devpts/input)
 
 toolchain/
   magiskboot                Vendored static magiskboot (used for CI repack)

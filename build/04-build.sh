@@ -119,7 +119,7 @@ if [ "$ENABLE_KSU" = "true" ]; then
     echo
     echo "=== KSU/SUSFS options in final .config ==="
     KMISSING=0
-    KSU_CHECKS="CONFIG_KSU CONFIG_KPROBES CONFIG_KALLSYMS CONFIG_KALLSYMS_ALL"
+    KSU_CHECKS="CONFIG_KSU CONFIG_KALLSYMS CONFIG_KALLSYMS_ALL"
     [ "$ENABLE_SUSFS" = "true" ] && KSU_CHECKS="$KSU_CHECKS CONFIG_KSU_SUSFS"
     for c in $KSU_CHECKS; do
         v=$(grep -E "^${c}=" "$OUT/.config" | cut -d= -f2)

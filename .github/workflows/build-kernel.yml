@@ -125,7 +125,7 @@ jobs:
           # If KSU was enabled, verify KSU options
           if [ "${{ inputs.enable_ksu }}" = "true" ]; then
             echo ">> Checking KernelSU requirements..."
-            CHECKS="$CHECKS CONFIG_KSU CONFIG_KPROBES CONFIG_KALLSYMS CONFIG_KALLSYMS_ALL"
+            CHECKS="$CHECKS CONFIG_KSU CONFIG_KALLSYMS CONFIG_KALLSYMS_ALL"
           fi
 
           # If SUSFS was enabled, verify SUSFS options
