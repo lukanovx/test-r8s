@@ -26,11 +26,11 @@ on:
       enable_ksu:
         description: 'Apply KernelSU kernel driver (official tiann/KernelSU)'
         type: boolean
-        default: false
+        default: true
       enable_susfs:
         description: 'Apply classic SUSFS kernel patches (hide root from apps). Requires enable_ksu=true.'
         type: boolean
-        default: false
+        default: true
       ksu_tag:
         description: 'tiann/KernelSU tag to pin (default v0.9.5 — matches the classic SUSFS patch)'
         required: false
@@ -46,7 +46,7 @@ on:
       release:
         description: 'Also publish as a GitHub Release (in addition to the artifact)'
         type: boolean
-        default: false
+        default: true
 
 # Required so softprops/action-gh-release can create the release + tag.
 permissions:

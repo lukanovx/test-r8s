@@ -1,4 +1,4 @@
-# r8s-docker-kernel
+# Kernel for r8s with built-in KernelSU and SUSFS
 
 Kernel build pipeline for the **Samsung Galaxy S20 FE** (Exynos 990, SM-G780F, codename **r8s**) running LineageOS.
 
@@ -23,12 +23,12 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 | `kernel_ref` | *(empty)* | Kernel commit/tag to pin. Empty = pinned default, `latest` = branch tip |
 | `clang` | `r416183b` | Clang prebuilt version (from `BoardConfigCommon.mk`) |
 | `extra_config` | *(empty)* | Optional fragment: e.g. `config/docker-kernel.config`. **Docker is OFF by default** |
-| `enable_ksu` | `false` | Build with KernelSU (official `tiann/KernelSU` driver) |
-| `enable_susfs` | `false` | Apply classic SUSFS patches (hide root). Requires `enable_ksu=true` |
+| `enable_ksu` | `true` | Build with KernelSU (official `tiann/KernelSU` driver) |
+| `enable_susfs` | `true` | Apply classic SUSFS patches (hide root). Requires `enable_ksu=true` |
 | `ksu_tag` | `v0.9.5` | `tiann/KernelSU` tag to pin — `v0.9.5` matches the classic SUSFS patch |
 | `susfs_ref` | *(empty)* | susfs4ksu commit/tag to pin. Empty = pinned default, `latest` = branch tip |
 | `boot_img_url` | `https://mirrorbits.lineageos.org/full/r8s/20260928/boot.img` | Stock boot.img URL (pinned 20260928 build). Set to `none`/empty to disable repacking |
-| `release` | `false` | Also publish as a GitHub Release |
+| `release` | `true` | Also publish as a GitHub Release |
 
 4. Wait ~15–20 min. Download the **Image** artifact from the run.
 
