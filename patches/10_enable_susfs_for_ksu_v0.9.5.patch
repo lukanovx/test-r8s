@@ -28,7 +28,7 @@ index 67f177f4..5b4100b7 100644
 +    default y
 +    help
 +      - Allow hiding the user-defined path and all its sub-paths from various system calls.
-+      - tmpfs filesystem is not allowed to be added. 
++      - tmpfs filesystem is not allowed to be added.
 +      - Effective only on zygote spawned user app process.
 +      - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
 +        just disable this feature if it doesn't work for you or you don't need it at all.
@@ -41,7 +41,7 @@ index 67f177f4..5b4100b7 100644
 +      - Allow hiding the user-defined mount paths from /proc/self/[mounts|mountinfo|mountstat].
 +      - Effective on all processes for hiding mount entries.
 +      - Mounts mounted by process with ksu domain will be forced to be assigned the dev name "KSU".
-+      - mnt_id and mnt_group_id of the sus mount will be assigned to a much bigger number to solve the issue of id not being contiguous.  
++      - mnt_id and mnt_group_id of the sus mount will be assigned to a much bigger number to solve the issue of id not being contiguous.
 +
 +config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
 +    bool "Enable to hide KSU's default mounts automatically (experimental)"
@@ -103,7 +103,7 @@ index 67f177f4..5b4100b7 100644
 +    help
 +      - Allow spoofing the string returned by uname syscall to user-defined string.
 +      - Effective on all processes.
-+      
++
 +config KSU_SUSFS_ENABLE_LOG
 +    bool "Enable logging susfs log to kernel"
 +    depends on KSU_SUSFS
@@ -831,7 +831,7 @@ index 429ba330..f6b214c2 100644
 +	ksu_try_umount("/vendor", true, 0, uid);
 +	ksu_try_umount("/product", true, 0, uid);
 +	ksu_try_umount("/odm", true, 0, uid);
-+	// - For '/data/adb/modules' we pass 'false' here because it is a loop device that we can't determine whether 
++	// - For '/data/adb/modules' we pass 'false' here because it is a loop device that we can't determine whether
 +	//   its dev_name is KSU or not, and it is safe to just umount it if it is really a mountpoint
 +	ksu_try_umount("/data/adb/modules", false, MNT_DETACH, uid);
 +	/* For both Legacy KSU and Magic Mount KSU */
@@ -1367,11 +1367,6 @@ index 9b45cd0d..4fd06f44 100644
  
  	return 0;
  }
-@@ -365,3 +365,4 @@ void ksu_sucompat_exit()
- 	unregister_kprobe(&pts_unix98_lookup_kp);
- #endif
- }
-+
 diff --git a/kernel/throne_tracker.c b/kernel/throne_tracker.c
 index c709a692..bcd1b639 100644
 --- a/kernel/throne_tracker.c
