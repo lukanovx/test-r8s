@@ -100,8 +100,10 @@ Patch flow (`build/02-fontes.sh`):
    (`exec`/`open`/`read_write`/`stat`/`devpts`/`input`), for the non-kprobe path.
 3. Apply `patches/10_enable_susfs_for_ksu_v0.9.5.patch` — simonpunk's classic SUSFS patch,
    pre-resolved against v0.9.5.
-4. Copy `susfs4ksu` `fs/*` + `include/linux/*` into the kernel tree.
-5. Apply `patches/50_add_susfs_in_kernel-4.19-exynos990.patch` — tailored Samsung Exynos 990 hooks.
+4. Apply `patches/11_ksu_try_umount_path_leak.patch` — fixes a `struct path` reference leak in
+   KernelSU v0.9.5's `ksu_try_umount()` (upstream bug: 5 leaked references per app launch).
+5. Copy `susfs4ksu` `fs/*` + `include/linux/*` into the kernel tree.
+6. Apply `patches/50_add_susfs_in_kernel-4.19-exynos990.patch` — tailored Samsung Exynos 990 hooks.
 
 ---
 
@@ -193,6 +195,7 @@ config/
 
 patches/
   10_enable_susfs_for_ksu_v0.9.5.patch  Classic SUSFS patch, resolved against KernelSU v0.9.5
+  11_ksu_try_umount_path_leak.patch  ksu_try_umount() struct path refcount leak fix (upstream v0.9.5)
   50_add_susfs_in_kernel-4.19-exynos990.patch  Tailored Samsung Exynos 990 SUSFS hooks
   60_ksu_manual_hooks_exynos990.patch  KernelSU non-kprobe manual hooks (exec/open/read_write/stat/devpts/input)
 

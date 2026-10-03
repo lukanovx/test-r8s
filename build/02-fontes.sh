@@ -171,6 +171,26 @@ if [ "$ENABLE_SUSFS" = "true" ]; then
         exit 1
     fi
 
+    # Fix a path-reference leak in the SUSFS-patched ksu_try_umount().
+    # kern_path() returns a referenced struct path (dentry + vfsmount), but two
+    # early returns bail out without path_put(). SUSFS's susfs_try_umount_all()
+    # calls it with check_mnt=true for /system, /system_ext, /vendor, /product
+    # and /odm -- none of which are KSU mounts, so should_umount() is false and
+    # the early return is taken: every app launch leaked 5 references. The
+    # success path is fine (the injected path_umount() does dput+mntput).
+    # Upstream tiann/KernelSU v0.9.5 code; local fix.
+    KSU_UMOUNT_FIX_PATCH="$PROJECT_DIR/patches/11_ksu_try_umount_path_leak.patch"
+    if [ -f "$KSU_UMOUNT_FIX_PATCH" ]; then
+        echo ">> Applying ksu_try_umount() path-leak fix: $KSU_UMOUNT_FIX_PATCH"
+        git -C "$KSU_REPO" apply "$KSU_UMOUNT_FIX_PATCH" || {
+            echo "!! Failed to apply $KSU_UMOUNT_FIX_PATCH"
+            exit 1
+        }
+    else
+        echo "!! ksu_try_umount() path-leak fix not found at $KSU_UMOUNT_FIX_PATCH"
+        exit 1
+    fi
+
     # Apply tailored Samsung Exynos 990 / universal9830 SUSFS patch
     SAMSUNG_SUSFS_PATCH="$PROJECT_DIR/patches/50_add_susfs_in_kernel-4.19-exynos990.patch"
     if [ -f "$SAMSUNG_SUSFS_PATCH" ]; then
