@@ -25,6 +25,7 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 | `extra_config` | *(empty)* | Optional fragment: e.g. `config/docker-kernel.config`. **Docker is OFF by default** |
 | `enable_ksu` | `true` | Build with KernelSU (official `tiann/KernelSU` driver) |
 | `enable_susfs` | `true` | Apply classic SUSFS patches (hide root). Requires `enable_ksu=true` |
+| `debug_slub` | `false` | **Diagnostic build**: SLUB redzones/poisoning + slab merging off, to catch the `list_del` corruption culprit. Slow and memory-hungry — not for daily use |
 | `ksu_tag` | `v0.9.5` | `tiann/KernelSU` tag to pin — `v0.9.5` matches the classic SUSFS patch |
 | `susfs_ref` | *(empty)* | susfs4ksu commit/tag to pin. Empty = pinned default, `latest` = branch tip |
 | `boot_img_url` | `https://mirrorbits.lineageos.org/full/r8s/20260928/boot.img` | Stock boot.img URL (pinned 20260928 build). Set to `none`/empty to disable repacking |
@@ -56,6 +57,7 @@ Adapted from [exynos990-docker-kernel](https://github.com/Emerichek/exynos990-do
 exynos9830_defconfig        ← base for all Exynos 990 devices
 r8s.config                  ← r8s hardware (QCA WiFi/BT, MHI modem, cameras, display, sensors…)
 config/ksu.config           ← merged automatically when enable_ksu=true (KernelSU + SUSFS)
+config/debug-slub.config    ← merged automatically when debug_slub=true (diagnostics)
 [extra_config]              ← optional fragment (docker-kernel.config)
 ```
 
@@ -192,6 +194,7 @@ config/
   docker-kernel.config      Enable Docker: namespaces, bridge, netfilter, cgroups
   docker-minimal.config     Minimal Docker (required options only)
   ksu.config                KernelSU + classic SUSFS options (merged when enable_ksu=true)
+  debug-slub.config         Memory-corruption diagnostics (merged when debug_slub=true)
 
 patches/
   10_enable_susfs_for_ksu_v0.9.5.patch  Classic SUSFS patch, resolved against KernelSU v0.9.5
@@ -210,6 +213,59 @@ flash/
   flash-kernel.sh           Flash with readback verification
   repack-test.sh            Test magiskboot idempotency
 ```
+
+---
+
+## Debugging the kernel panic (`list_del` corruption)
+
+The device hits a recurring, so far unattributed panic:
+
+```
+list_del corruption. prev->next should be ffffffc8c3495dd8, but was 0000002dc3495dd8
+kernel BUG at lib/list_debug.c:61
+  -> selinux_inode_free_security -> security_inode_free -> __destroy_inode
+     -> evict -> iput -> __fput -> task_work_run
+```
+
+The low 32 bits match and the **high 32 bits were overwritten** — a
+wrong-offset / cross-object write into a kernel pointer. `CONFIG_DEBUG_LIST`
+(already on) catches it, but it reports the **victim** (an
+`inode_security_struct`) and not the **culprit**. Nothing in the standard
+config can see the faulty write.
+
+**Build a diagnostic image:**
+
+```
+Actions -> Build kernel (r8s) -> Run workflow
+  enable_ksu = true
+  debug_slub = true      <-- this
+```
+
+That merges `config/debug-slub.config`, which adds:
+
+| Option | Effect |
+|---|---|
+| `CONFIG_SLUB_DEBUG` + `CONFIG_SLUB_DEBUG_ON` | redzones (catch overflow), poisoning (catch use-after-free), user tracking (records the alloc/free stack of the corrupted object) — equivalent to `slub_debug=FZPU` |
+| `# CONFIG_SLAB_MERGE_DEFAULT is not set` | stops aliasing different object types into one cache, so a cross-type overflow becomes visible |
+| `CONFIG_SLAB_FREELIST_HARDENED` | turns silent freelist corruption into an explicit report |
+
+The artifact is named `Image-r8s-<branch>-<run>-DEBUG`.
+
+**Reproduce, then read the evidence.** `CONFIG_PANIC_ON_OOPS=y`, so the first
+oops still reboots — but the report is in `/proc/last_kmsg`, and the boot
+capture hook (`/data/adb/service.d/00_debug_dmesg.sh`) copies it into
+`/sdcard/Download/Debug/last_kmsg_<ts>.txt` automatically on the next boot.
+Look for which object was **overwritten**, plus the alloc/free stack that
+`SLAB_STORE_USER` recorded for it.
+
+**Cost:** noticeably more memory and slower allocation. This is a diagnostic
+build — flash it, reproduce, then return to a normal build. To switch the
+debug off without rebuilding, append `slub_debug=-` to the kernel cmdline.
+
+If redzones miss it, the next step is `CONFIG_KASAN=y` (notes at the bottom of
+`config/debug-slub.config`) — it catches plain wrong-offset writes that never
+cross a slab boundary, but it is much heavier and may conflict with
+`CONFIG_LTO_CLANG`, which this kernel requires to boot.
 
 ---
 

@@ -31,6 +31,10 @@ on:
         description: 'Apply classic SUSFS kernel patches (hide root from apps). Requires enable_ksu=true.'
         type: boolean
         default: true
+      debug_slub:
+        description: 'DIAGNOSTIC: SLUB redzones/poisoning + slab merging off, to catch the list_del corruption culprit. Slow and memory-hungry — not for daily use.'
+        type: boolean
+        default: false
       ksu_tag:
         description: 'tiann/KernelSU tag to pin (default v0.9.5 — matches the classic SUSFS patch)'
         required: false
@@ -66,6 +70,7 @@ jobs:
       EXTRA_CONFIG: ${{ inputs.extra_config }}
       ENABLE_KSU:   ${{ inputs.enable_ksu }}
       ENABLE_SUSFS: ${{ inputs.enable_susfs }}
+      DEBUG_SLUB:   ${{ inputs.debug_slub }}
       KSU_TAG:      ${{ inputs.ksu_tag }}
       KERNEL_REF:   ${{ inputs.kernel_ref }}
       SUSFS_REF:    ${{ inputs.susfs_ref }}
@@ -172,6 +177,7 @@ jobs:
             echo "| Device | \`r8s\` — SM-G780F (Galaxy S20 FE Exynos) |"
             echo "| Clang  | \`${CLANG_VER}\` |"
             echo "| Extra config | \`${EXTRA_CONFIG:-none}\` |"
+            echo "| Diagnostics | $([ "$DEBUG_SLUB" = "true" ] && echo '**SLUB redzones/poisoning, slab merging OFF (DEBUG)**' || echo 'none') |"
             echo "| Kernel commit | \`$(git -C "$KERNEL_BASE/src" rev-parse --short=12 HEAD)\` |"
             echo "| Size | $(stat -c %s "$IMG") bytes |"
             echo "| md5  | \`$(md5sum "$IMG" | cut -d' ' -f1)\` |"
@@ -186,7 +192,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Image-r8s-${{ inputs.branch }}-${{ github.run_number }}
+          name: Image-r8s-${{ inputs.branch }}-${{ github.run_number }}${{ inputs.debug_slub && '-DEBUG' || '' }}
           path: |
             out/Image
             out/boot-new.img

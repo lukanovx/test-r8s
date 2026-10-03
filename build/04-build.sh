@@ -60,12 +60,28 @@ if [ -n "$EXTRA_CONFIG" ]; then
     fi
 fi
 
+# ── Optional memory-corruption diagnostics ────────────────────────────────────
+# See config/debug-slub.config. Kept separate from EXTRA_CONFIG because the
+# workflow's extra_config input holds a single fragment, and this must compose
+# with ksu.config and any extra fragment.
+DEBUG_SLUB="${DEBUG_SLUB:-false}"
+DEBUG_ABS=""
+if [ "$DEBUG_SLUB" = "true" ]; then
+    if [ -f "$PROJECT_DIR/config/debug-slub.config" ]; then
+        DEBUG_ABS="$PROJECT_DIR/config/debug-slub.config"
+    else
+        echo "!! DEBUG_SLUB=true but $PROJECT_DIR/config/debug-slub.config is missing"
+        exit 1
+    fi
+fi
+
 cd "$SRC"
 
 echo "=== Configuring for r8s ==="
 echo "  defconfig  : $DEFCONFIG"
 echo "  device cfg : r8s.config"
 [ -n "$EXTRA_ABS" ] && echo "  extra cfg  : $EXTRA_ABS" || echo "  extra cfg  : (none)"
+[ -n "$DEBUG_ABS" ] && echo "  debug cfg  : $DEBUG_ABS  (SLUB redzones/poisoning, slab merging off)"
 echo
 
 # Step 1 — base defconfig
@@ -80,6 +96,7 @@ if [ "$ENABLE_KSU" = "true" ] && [ -f "$PROJECT_DIR/config/ksu.config" ]; then
 fi
 
 [ -n "$EXTRA_ABS" ] && MERGE_SRCS="$MERGE_SRCS $EXTRA_ABS"
+[ -n "$DEBUG_ABS" ] && MERGE_SRCS="$MERGE_SRCS $DEBUG_ABS"
 
 ./scripts/kconfig/merge_config.sh -m -O "$OUT" $MERGE_SRCS > /dev/null
 
@@ -129,7 +146,24 @@ if [ "$ENABLE_KSU" = "true" ]; then
     [ "$KMISSING" = "0" ] || { echo "!! $KMISSING KSU option(s) missing — aborting"; exit 1; }
 fi
 
-
+# ── GATE 2c: memory-corruption diagnostics (when DEBUG_SLUB=true) ────────────
+if [ -n "$DEBUG_ABS" ]; then
+    echo
+    echo "=== memory-corruption diagnostics in final .config ==="
+    DMISSING=0
+    for c in CONFIG_SLUB_DEBUG CONFIG_SLUB_DEBUG_ON CONFIG_SLAB_FREELIST_HARDENED; do
+        v=$(grep -E "^${c}=" "$OUT/.config" | cut -d= -f2)
+        if [ -n "$v" ]; then printf '  [%s] %s\n' "$v" "$c"
+        else printf '  [MISSING] %s\n' "$c"; DMISSING=$((DMISSING+1)); fi
+    done
+    if grep -q "^CONFIG_SLAB_MERGE_DEFAULT=y" "$OUT/.config"; then
+        printf '  [WARN] CONFIG_SLAB_MERGE_DEFAULT is still y — merging NOT disabled\n'
+        DMISSING=$((DMISSING+1))
+    else
+        printf '  [off] CONFIG_SLAB_MERGE_DEFAULT\n'
+    fi
+    [ "$DMISSING" = "0" ] || { echo "!! $DMISSING diagnostic option(s) not applied — aborting"; exit 1; }
+fi
 
 # ── If an extra config was merged, verify its key options too ─────────────────
 if [ -n "$EXTRA_ABS" ]; then
